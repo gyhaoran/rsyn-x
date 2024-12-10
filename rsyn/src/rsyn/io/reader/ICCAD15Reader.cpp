@@ -313,7 +313,7 @@ void ICCAD15Reader::parseConfigFileICCAD15(boost::filesystem::path & path) {
 		boost::filesystem::path::preferred_separator;
 	
 	for(std::string circuit : files ){
-		std::string extension = boost::filesystem::extension(circuit);
+		std::string extension = boost::filesystem::path(circuit).extension().string();
 		
 		if (extension.compare(".v") == 0)
 			clsFilenameV = directory + circuit;

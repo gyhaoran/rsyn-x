@@ -41,7 +41,7 @@ bool DesignPositionReader::load(const Rsyn::Json & config) {
 	clsDesign = session.getDesign();
 	clsModule = session.getTopModule();
 	clsPhysicalDesign = session.getPhysicalDesign();
-	std::string ext = boost::filesystem::extension(path);
+	std::string ext = boost::filesystem::path(path).extension().string();
 	
 	// checking the extension file
 	if (ext.compare(".pl") == 0) {
