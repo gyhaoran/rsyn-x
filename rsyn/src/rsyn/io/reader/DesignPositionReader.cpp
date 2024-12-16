@@ -51,7 +51,7 @@ bool DesignPositionReader::load(const Rsyn::Json & config) {
 	} else {
 		throw Exception("Invalid extension file in the path " + path);
 	} // end if-else
-
+	
 	return true;
 } // end method 
 
@@ -84,9 +84,10 @@ void DesignPositionReader::openBookshelf(std::string & path) {
 	BookshelfParser parser;
 	BookshelfDscp dscp;
 
-	parser.parsePlaced(path, dscp);
 	Stepwatch watchParsing("Parsing Bookshelf Placed Design");
+	parser.parsePlaced(path, dscp);
 	watchParsing.finish();
+	
 	DBU scale = clsPhysicalDesign.getDatabaseUnits(Rsyn::DESIGN_DBU);
 	for (const BookshelfNode & node : dscp.clsNodes) {
 		Rsyn::Cell cell = clsDesign.findCellByName(node.clsName);

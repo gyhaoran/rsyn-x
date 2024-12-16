@@ -66,7 +66,7 @@ WorkerThread::run() {
 	} catch (std::exception &e) {
 		std::cout << "EXCEPTION: " << e.what() << "\n";
 	} catch (...) {
-		std::cout << "EXCEPTION: " << "unknown" << "\n";
+		std::cout << "EXCEPTION: " << "WorkerThread::run unknown" << "\n";
 	} // end catch
 
 	emit resultReady(result);

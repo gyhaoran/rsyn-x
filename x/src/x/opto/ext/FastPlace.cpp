@@ -38,7 +38,7 @@ bool FastPlace::run(const Rsyn::Json &params) {
 	const std::string &designName = session.getDesign().getName();
 	const std::string tmp = createTemporaryDirectory();
 	
-	writer->writeBookshelf2(tmp);
+	writer->writeBookshelf(tmp);
 	
 	std::string cmd;
 	cmd += session.getInstallationPath() + "/bin/FastPlace3.0_Linux32_GP ";
@@ -51,8 +51,9 @@ bool FastPlace::run(const Rsyn::Json &params) {
 	exec(cmd);
 	
 	Rsyn::Json config;
-	config["path"] = tmp + "/" + designName + "_FP_gp.pl";
-	session.runReader("loadDesignPosition", config);
+	// config["path"] = tmp + "/" + designName + "_FP_gp.pl";
+	config["path"] = tmp + "/" + designName + ".pl";
+	session.runProcess("loadDesignPosition", config);
 			
 	return true;
 } // end method

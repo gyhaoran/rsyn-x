@@ -68,12 +68,15 @@ bool BookshelfReader::load(const Rsyn::Json &params) {
 	const std::string filename =  checkRelativePath?
 		relativePath : optionBenchmark;
 	
-	Stepwatch watchParsing("Parsing Design");
+	Stepwatch watchParsing("Parsing Bookshelf Design");
 	try {
 		parser.parse(filename, dscp);
 	} catch (const std::exception &e) {
-		std::cout << "EXCEPTION: " << e.what() << "\n";
+		std::cout << "Parsing Bookshelf EXCEPTION : " << e.what() << "\n";
 		std::exit(1);
+	} catch (...) {
+		std::cout << "Parsing Bookshelf Unkonw EXCEPTION.\n";
+		return false;
 	} // end catch
 	
 	mapper.mapLefDef(dscp, lefDscp, defDscp);

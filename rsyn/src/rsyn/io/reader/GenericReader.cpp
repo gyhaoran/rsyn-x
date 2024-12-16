@@ -209,13 +209,17 @@ void GenericReader::populateDesign() {
 
 	Rsyn::Design design = session.getDesign();
 
-	if (enableTiming)
+	if (enableTiming) {
 		Reader::populateRsynLibraryFromLiberty(libInfoEarly, design);
+	}
 
-	if (enableNetlistFromVerilog)
+	Stepwatch watchRsyn("Loading design into Rsyn");
+	if (enableNetlistFromVerilog) {
 		Reader::populateRsyn(lefDescriptor, defDescriptor, verilogDescriptor, design);
-	else Reader::populateRsyn(lefDescriptor, defDescriptor, design);
-
+	} else {
+		Reader::populateRsyn(lefDescriptor, defDescriptor, design);
+	}
+	watchRsyn.finish();
 	Rsyn::Json physicalDesignConfiguration;
 	physicalDesignConfiguration["clsEnableMergeRectangles"] = false;
 	physicalDesignConfiguration["clsEnableNetPinBoundaries"] = true;
