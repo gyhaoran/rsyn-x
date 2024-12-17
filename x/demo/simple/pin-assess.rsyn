@@ -1,0 +1,3 @@
+open "pin.assessment" {
+	"lefFiles" : "pac.lef"
+};
