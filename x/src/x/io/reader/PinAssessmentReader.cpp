@@ -12,6 +12,192 @@ namespace Rsyn {
 
 namespace {
 
+// Predefined constants
+const string INVALID_LEF_NAME = "INVALID";
+const double MIN_WIDTH = 0.06; // Minimum width in micrometers
+const double MIN_SPACING = 0.06; // Minimum spacing between metals in micrometers
+const double EPSILON = 1e-9; // Small value for floating point comparison
+
+// Function to check design rules including minimum spacing from other pins
+bool checkDesignRules(const DoubleRectangle& rect, 
+                      const std::vector<LefObsDscp>& obstructions, 
+                      const std::vector<LefPinDscp>& otherPins,
+                      const DoubleRectangle& macroBound) {
+    // Check minimum width
+    if (rect.computeLength(X) < MIN_WIDTH || rect.computeLength(Y) < MIN_WIDTH) {
+        // std::cout << "\033[1;31m" << "Check minimum width failed: X: " << rect.computeLength(X) << ", Y: " << rect.computeLength(Y) << ", rect: " << rect << '\n';
+        return false;
+    }
+
+    // Check minimum spacing from obstructions and other pins
+    auto checkSpacing = [&](const DoubleRectangle& bound) -> bool {
+        double dx = std::max(0.0, std::min(std::abs(rect[LOWER][X] - bound[UPPER][X]), std::abs(rect[UPPER][X] - bound[LOWER][X])));
+        double dy = std::max(0.0, std::min(std::abs(rect[LOWER][Y] - bound[UPPER][Y]), std::abs(rect[UPPER][Y] - bound[LOWER][Y])));
+        return std::max(dx, dy) > MIN_SPACING;
+    };
+
+    auto checkSpacing2 = [&](const DoubleRectangle& bound) -> bool {
+        double dx = std::max(0.0, std::min(std::abs(rect[LOWER][X] - bound[LOWER][X]), std::abs(rect[UPPER][X] - bound[UPPER][X])));
+        double dy = std::max(0.0, std::min(std::abs(rect[LOWER][Y] - bound[LOWER][Y]), std::abs(rect[UPPER][Y] - bound[UPPER][Y])));
+        return std::min(dx, dy) > MIN_SPACING;
+    };
+
+    if (!checkSpacing2(macroBound)) {
+        // std::cout << "\033[1;31m" << "Check macro bound failed\n";
+        return false;
+    }
+
+    // Check against obstructions
+    for (const auto& obs : obstructions) {
+        for (const auto& bound : obs.clsBounds) {
+            if (!checkSpacing(bound)) {
+                return false;
+            }
+        }
+    }
+
+    // Check against other pins
+    for (const auto& pin : otherPins) {
+        for (const auto& port : pin.clsPorts) {
+            for (const auto& geo : port.clsLefPortGeoDscp) {
+                for (const auto& bound : geo.clsBounds) {
+                    if (rect.overlap(bound)) {
+                        // std::cout << "\033[1;31m" << "expand pin port is overlap other pin port, port_expand: " << rect 
+                        //           << ", Other Pin " << pin.clsPinName << " port" << bound << '\n';
+                        return false;
+                    }
+                    if (!checkSpacing(bound)) {
+                        // std::cout << "\033[1;31m" << "Check minimum spacing failed, port_expand: " << rect 
+                        //           << ", Other Pin " << pin.clsPinName << " port" << bound << '\n';
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+// Placeholder function to retrieve obstructions from the macro.
+std::vector<LefObsDscp> getObstructionsFromMacro(const LefMacroDscp& macro) {
+    return macro.clsObs; // Return all obstructions within the macro.
+}
+
+// Function to calculate maximum expansion in one direction
+double calculateMaxExpansion(const DoubleRectangle& pinRect, 
+                             const std::vector<LefObsDscp>& obstructions,
+                             const std::vector<LefPinDscp>& otherPins,
+                             const DoubleRectangle& macroBound,
+                             const int dimension,
+                             const bool positiveDirection) {
+    double maxExpansion = 0.0;
+    double increment = 0.01; // Larger step size for faster execution
+
+    while (true) {
+        DoubleRectangle testRect(pinRect);
+        double newCoord = positiveDirection ? pinRect[UPPER][dimension] + maxExpansion :
+                                              pinRect[LOWER][dimension] - maxExpansion;
+
+        // Update the points of the rectangle based on the dimension being expanded
+        if (dimension == X) {
+            testRect.updatePoints(
+                positiveDirection ? pinRect[LOWER] : double2(newCoord, pinRect[LOWER][Y]),
+                positiveDirection ? double2(newCoord, pinRect[UPPER][Y]) : pinRect[UPPER]
+            );
+        } else if (dimension == Y) {
+            testRect.updatePoints(
+                positiveDirection ? pinRect[LOWER] : double2(pinRect[LOWER][X], newCoord),
+                positiveDirection ? double2(pinRect[UPPER][X], newCoord) : pinRect[UPPER]
+            );
+        }
+
+        // std::cout << "\033[0m" << "pinRect: " << pinRect << ", dimension: " << dimension<< ", positiveDirection: " << positiveDirection 
+        //     << ", maxExpansion: " << maxExpansion << ", testRect: " << testRect << '\n';
+
+        if (!checkDesignRules(testRect, obstructions, otherPins, macroBound)) {
+            break;
+        }
+
+        maxExpansion += increment;
+        
+        if (newCoord < macroBound[LOWER][Y] || newCoord < macroBound[LOWER][X] 
+            || newCoord > std::max(macroBound[UPPER][Y], macroBound[UPPER][X]))
+        {
+            std::cout << "\033[1;31m" << "error: over the macro bound " << macroBound << " in expand, will exist.\033[0m\n";
+            std::exit(1);
+            return 0;
+        }
+    }
+
+    return maxExpansion - increment; // Subtract the last increment that caused failure
+}
+
+// Function to calculate expansion capabilities in four directions
+void calculateExpansionCapabilities(const LefPinDscp& pin, 
+                                    const std::vector<LefObsDscp>& obstructions, 
+                                    const std::vector<LefPinDscp>& otherPins,
+                                    const DoubleRectangle& macroBound) {
+    
+    double avgAcsNMx = 0.0, avgAcsSMx = 0.0, avgAcsEMx = 0.0, avgAcsWMx = 0.0;
+    size_t count = 0;
+    // std::cout << "Expand Pin " << pin.clsPinName << "\n";
+    for (const auto& port : pin.clsPorts) {
+        for (const auto& geo : port.clsLefPortGeoDscp) {
+            for (const auto& rect : geo.clsBounds) {
+                double acsNMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, Y, true); // North
+                double acsSMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, Y, false); // South
+                double acsEMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, true); // East
+                double acsWMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, false); // West
+
+                avgAcsNMx += acsNMx;
+                avgAcsSMx += acsSMx;
+                avgAcsEMx += acsEMx;
+                avgAcsWMx += acsWMx;
+                ++count;
+            }
+        }
+    }
+
+    if (count > 0) {
+        avgAcsNMx /= count;
+        avgAcsSMx /= count;
+        avgAcsEMx /= count;
+        avgAcsWMx /= count;
+
+        // Apply 5% weight to each direction
+        // double weight = 0.05;
+        // acsNMx *= weight;
+        // acsSMx *= weight;
+        // acsEMx *= weight;
+        // acsWMx *= weight;
+
+        std::cout << "\033[0m" << "Pin: " << pin.clsPinName
+                  << ", Avg AcsNMx: " << avgAcsNMx << ", Avg AcsSMx: " << avgAcsSMx 
+                  << ", Avg AcsEMx: " << avgAcsEMx << ", Avg AcsWMx: " << avgAcsWMx << endl;
+    } else {
+        std::cout << "No valid geometries found for calculation.\n";
+    }
+}
+
+// Function to calculate expansion capabilities for all pins in a macro
+void calculateAllPinsExpansionCapabilities(const LefMacroDscp& macro) {
+    for (size_t i = 0; i < macro.clsPins.size(); ++i) {
+        const auto& pin = macro.clsPins[i];
+        std::vector<LefPinDscp> otherPins;
+        otherPins.reserve(macro.clsPins.size() - 1);
+        for (size_t j = 0; j < macro.clsPins.size(); ++j) {
+            if (i != j) otherPins.push_back(macro.clsPins[j]);
+        }
+
+        if (pin.clsPinName == "VDD" || pin.clsPinName == "VSS") {
+            continue;     
+        }
+        DoubleRectangle macroBound(macro.clsOrigin, macro.clsSize);
+        calculateExpansionCapabilities(pin, macro.clsObs, otherPins, macroBound);
+    }
+}
+
 class PinScore {
 public:
     explicit PinScore(const std::string& pinName, double pinLength=0, bool connect=false, bool isBound=false)
@@ -154,8 +340,7 @@ public:
 
     void print() const
     {
-        double epsilon = 1e-9;
-        if (pinTotalLength_ < epsilon) {
+        if (pinTotalLength_ <= EPSILON) {
             std::cout << "  no pin in macro, total pin calc length: " << pinTotalLength_ << '\n';
             return;
         }
@@ -206,13 +391,21 @@ void pinAccessCheck(const LefDscp& lef) {
     MEASURE_TIME();
     for (auto& macro : lef.clsLefMacroDscps)
     {
-        std::cout << "Macro " << macro.clsMacroName << ": pin num: " << macro.clsPins.size() << '\n';
+        std::cout << "\n\n\n";
+        std::cout << "Macro " << macro.clsMacroName << ": pin num: " << macro.clsPins.size() << ", clsSize" << macro.clsSize << '\n';
         MacroScore macroScore(macro);
 
         macroScore.calc();
         macroScore.print();
+        std::cout << "\n\n\n";
+
+        calculateAllPinsExpansionCapabilities(macro);
 
         // printMacros(macro);
+    }
+    for (auto& layer : lef.clsLefLayerDscps)
+    {
+
     }
 }
 
