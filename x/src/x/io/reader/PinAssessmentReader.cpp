@@ -115,12 +115,12 @@ double calculateMaxExpansion(const DoubleRectangle& pinRect,
         // std::cout << "\033[0m" << "pinRect: " << pinRect << ", dimension: " << dimension<< ", positiveDirection: " << positiveDirection 
         //     << ", maxExpansion: " << maxExpansion << ", testRect: " << testRect << '\n';
 
+        maxExpansion += increment;
+
         if (!checkDesignRules(testRect, obstructions, otherPins, macroBound)) {
             break;
         }
 
-        maxExpansion += increment;
-        
         if (newCoord < macroBound[LOWER][Y] || newCoord < macroBound[LOWER][X] 
             || newCoord > std::max(macroBound[UPPER][Y], macroBound[UPPER][X]))
         {
@@ -133,15 +133,23 @@ double calculateMaxExpansion(const DoubleRectangle& pinRect,
     return maxExpansion - increment; // Subtract the last increment that caused failure
 }
 
+struct PinExpand {
+    double acsNMx{0};
+    double acsSMx{0};
+    double acsEMx{0};
+    double acsWMx{0};
+};
+
 // Function to calculate expansion capabilities in four directions
-void calculateExpansionCapabilities(const LefPinDscp& pin, 
-                                    const std::vector<LefObsDscp>& obstructions, 
-                                    const std::vector<LefPinDscp>& otherPins,
-                                    const DoubleRectangle& macroBound) {
-    
-    double avgAcsNMx = 0.0, avgAcsSMx = 0.0, avgAcsEMx = 0.0, avgAcsWMx = 0.0;
-    size_t count = 0;
-    // std::cout << "Expand Pin " << pin.clsPinName << "\n";
+using PinMetaExpand = std::map<string, PinExpand>;
+
+PinMetaExpand calculateExpansionCapabilities(const LefPinDscp& pin, 
+                                               const std::vector<LefObsDscp>& obstructions, 
+                                               const std::vector<LefPinDscp>& otherPins,
+                                               const DoubleRectangle& macroBound) {
+    PinMetaExpand metaExpand;
+    std::map<string, int> metaCount;
+
     for (const auto& port : pin.clsPorts) {
         for (const auto& geo : port.clsLefPortGeoDscp) {
             for (const auto& rect : geo.clsBounds) {
@@ -150,52 +158,26 @@ void calculateExpansionCapabilities(const LefPinDscp& pin,
                 double acsEMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, true); // East
                 double acsWMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, false); // West
 
-                avgAcsNMx += acsNMx;
-                avgAcsSMx += acsSMx;
-                avgAcsEMx += acsEMx;
-                avgAcsWMx += acsWMx;
-                ++count;
+                if (acsNMx < 0 || acsSMx < 0 || acsEMx < 0 || acsWMx < 0) {
+                    std::cout << "error: acsNMx: " << acsNMx << ", acsSMx: " << acsSMx << ", acsEMx: " << acsEMx << ", acsWMx: " << acsWMx << '\n';
+                }
+                metaExpand[geo.clsMetalName].acsNMx += acsNMx;
+                metaExpand[geo.clsMetalName].acsSMx += acsSMx;
+                metaExpand[geo.clsMetalName].acsEMx += acsEMx;
+                metaExpand[geo.clsMetalName].acsWMx += acsWMx;
+                metaCount[geo.clsMetalName]++;
             }
         }
     }
 
-    if (count > 0) {
-        avgAcsNMx /= count;
-        avgAcsSMx /= count;
-        avgAcsEMx /= count;
-        avgAcsWMx /= count;
-
-        // Apply 5% weight to each direction
-        // double weight = 0.05;
-        // acsNMx *= weight;
-        // acsSMx *= weight;
-        // acsEMx *= weight;
-        // acsWMx *= weight;
-
-        std::cout << "\033[0m" << "Pin: " << pin.clsPinName
-                  << ", Avg AcsNMx: " << avgAcsNMx << ", Avg AcsSMx: " << avgAcsSMx 
-                  << ", Avg AcsEMx: " << avgAcsEMx << ", Avg AcsWMx: " << avgAcsWMx << endl;
-    } else {
-        std::cout << "No valid geometries found for calculation.\n";
-    }
+    return metaExpand;
 }
 
-// Function to calculate expansion capabilities for all pins in a macro
-void calculateAllPinsExpansionCapabilities(const LefMacroDscp& macro) {
-    for (size_t i = 0; i < macro.clsPins.size(); ++i) {
-        const auto& pin = macro.clsPins[i];
-        std::vector<LefPinDscp> otherPins;
-        otherPins.reserve(macro.clsPins.size() - 1);
-        for (size_t j = 0; j < macro.clsPins.size(); ++j) {
-            if (i != j) otherPins.push_back(macro.clsPins[j]);
-        }
-
-        if (pin.clsPinName == "VDD" || pin.clsPinName == "VSS") {
-            continue;     
-        }
-        DoubleRectangle macroBound(macro.clsOrigin, macro.clsSize);
-        calculateExpansionCapabilities(pin, macro.clsObs, otherPins, macroBound);
+std::string padString(std::string s, int len=12) {
+    if (s.length() < len) {
+        s.resize(len, ' ');
     }
+    return s;
 }
 
 class PinScore {
@@ -205,9 +187,9 @@ public:
 
     double length() const { return pinLength_; }
 
-    double pinLenScore(double total) const {
+    double pinLenScore(double maxPnLen) const {
         double baseScore = 10;
-        auto percent = pinLength_ / total;
+        auto percent = pinLength_ / maxPnLen;
         return baseScore * percent;
     }
 
@@ -221,8 +203,31 @@ public:
         return isBound_ ? baseScore : 0;
     }
 
-    double score(double total) const {
-        return pinLenScore(total) + ovlpScore() + bdPinScore();
+    double dirScore(double value, double maxVal) const {
+        double baseScore = 5;
+        if (maxVal == 0) {
+            return baseScore; // Avoid division by zero
+        }
+        return baseScore * (maxVal - value) / maxVal;
+    }
+
+    double expandSocre(const PinExpand& expand, const PinExpand& maxExpand) const {
+        return dirScore(expand.acsEMx, maxExpand.acsEMx) + dirScore(expand.acsNMx, maxExpand.acsNMx)
+             + dirScore(expand.acsSMx, maxExpand.acsSMx) + dirScore(expand.acsWMx, maxExpand.acsWMx);
+    }
+
+    double expandSocre(PinMetaExpand& maxExpand) const {
+        double score = 0;
+        for (auto it : expand_) {
+            string meta = it.first;
+            PinExpand expand = it.second;
+            score += expandSocre(expand, maxExpand[meta]);
+        }
+        return score;
+    }
+
+    double score(double maxPnLen, PinMetaExpand& maxExpand) const {
+        return pinLenScore(maxPnLen) + ovlpScore() + bdPinScore() + expandSocre(maxExpand);
     }
 
     bool isConnected() const { return connectToUpperLayer_; }
@@ -231,11 +236,25 @@ public:
 
     const std::string& name() const { return pinName_; }
 
+    void setExpandLen(const PinMetaExpand& expand) { expand_ = expand; }
+
+    void printExpand(PinMetaExpand& maxExpand) {
+        for (auto it : expand_) {
+            string meta = it.first;
+            PinExpand expand = it.second;
+            std::cout << padString(std::to_string(dirScore(expand.acsNMx, maxExpand[meta].acsNMx)))
+                      << padString(std::to_string(dirScore(expand.acsSMx, maxExpand[meta].acsSMx)))
+                      << padString(std::to_string(dirScore(expand.acsWMx, maxExpand[meta].acsWMx)))
+                      << padString(std::to_string(dirScore(expand.acsEMx, maxExpand[meta].acsEMx)));
+        }
+    }
+
 private:
     const std::string& pinName_;
     double pinLength_;
     bool connectToUpperLayer_{false};
     bool isBound_{false};
+    PinMetaExpand expand_{};
 };
 
 bool isBoundPin(const LefMacroDscp& macro, const DoubleRectangle& bound)
@@ -320,32 +339,60 @@ class MacroScore {
 public:
     explicit MacroScore(const LefMacroDscp& macro) : macro_{macro} {}
 
-    void calc()
-    {        
-        std::transform(macro_.clsPins.begin(), macro_.clsPins.end(), std::back_inserter(pinScores_), [this](auto& pin) {
-            return calcPinScore(this->macro_, pin);
-        });
+    void calc() {
+        // std::transform(macro_.clsPins.begin(), macro_.clsPins.end(), std::back_inserter(pinScores_), [this](auto& pin) {
+        //     auto score =  calcPinScore(this->macro_, pin);
+        //     maxPinLength_ = std::max(maxPinLength_, score.length());
+        //     return score;
+        // });
 
-        pinTotalLength_ = std::accumulate(pinScores_.begin(), pinScores_.end(), 0.0, [](double init, auto& pin) { 
-            return init + pin.length(); 
-        });
-    }
+        for (size_t i = 0; i < macro_.clsPins.size(); ++i) {
+            const auto& pin = macro_.clsPins[i];
+            
+            if (pin.clsPinName == "VDD" || pin.clsPinName == "VSS") {
+                continue;     
+            }
 
-    std::string padString(std::string s, int len=12) const {
-        if (s.length() < len) {
-            s.resize(len, ' ');
+            auto score =  calcPinScore(this->macro_, pin);
+            maxPinLength_ = std::max(maxPinLength_, score.length());
+
+            std::vector<LefPinDscp> otherPins;
+            otherPins.reserve(macro_.clsPins.size() - 1);
+            for (size_t j = 0; j < macro_.clsPins.size(); ++j) {
+                if (i != j) {
+                    otherPins.push_back(macro_.clsPins[j]);
+                }
+            }
+
+            DoubleRectangle macroBound(macro_.clsOrigin, macro_.clsSize);
+            auto expand = calculateExpansionCapabilities(pin, macro_.clsObs, otherPins, macroBound);
+            score.setExpandLen(expand);
+            calcMaxExpand(expand);
+            
+            pinScores_.emplace_back(score);
         }
-        return s;
     }
 
-    void print() const
+    void calcMaxExpand(const PinMetaExpand& metaExpand) {
+        for (auto it : metaExpand) {
+            auto meta = it.first;
+            auto expand = it.second;
+
+            maxExpand_[meta].acsEMx = std::max(maxExpand_[meta].acsEMx, expand.acsEMx);
+            maxExpand_[meta].acsNMx = std::max(maxExpand_[meta].acsNMx, expand.acsNMx);
+            maxExpand_[meta].acsSMx = std::max(maxExpand_[meta].acsSMx, expand.acsSMx);
+            maxExpand_[meta].acsWMx = std::max(maxExpand_[meta].acsWMx, expand.acsWMx);
+        }
+    }
+
+    void print()
     {
-        if (pinTotalLength_ <= EPSILON) {
-            std::cout << "  no pin in macro, total pin calc length: " << pinTotalLength_ << '\n';
+        if (maxPinLength_ <= EPSILON) {
+            std::cout << "  no pin in macro, total pin calc length: " << maxPinLength_ << '\n';
             return;
         }
         
-        std::cout << "  PinName     Ovlp    PinLen    PlScore     Score       BdPin\n";
+        std::cout << "  PinName     Ovlp    PinLen    PlScore     Score       BdPin     AcsNMx      AcsSMx      AcsEMx      AcsWMx\n";
         for (auto& pin : pinScores_)
         {
             auto overlap = pin.isConnected() ? "YES" : "NO";
@@ -353,15 +400,26 @@ public:
 
             std::cout << "  " << padString(pin.name()) << padString(overlap, 8)
                       << padString(std::to_string(pin.length()), 10)
-                      << padString(std::to_string(pin.pinLenScore(pinTotalLength_)))
-                      << padString(std::to_string(pin.score(pinTotalLength_)))
-                      << bound << '\n';
+                      << padString(std::to_string(pin.pinLenScore(maxPinLength_)))
+                      << padString(std::to_string(pin.score(maxPinLength_, maxExpand_)))
+                      << padString(bound, 10);
+            pin.printExpand(maxExpand_);
+            std::cout << '\n';
         }
+
+        // std::cout << "  PinName     AcsNMx      AcsSMx      AcsEMx      AcsWMx\n";
+        // for (auto& pin : pinScores_)
+        // {
+        //     std::cout << "  " << padString(pin.name());
+        //     pin.printExpand(maxExpand_);
+        //     std::cout << '\n';
+        // }
     }
 
 private:
     const LefMacroDscp& macro_;
-    double pinTotalLength_{0};
+    double maxPinLength_{0};
+    PinMetaExpand maxExpand_{};
     std::vector<PinScore> pinScores_{};
 };
 
@@ -398,8 +456,6 @@ void pinAccessCheck(const LefDscp& lef) {
         macroScore.calc();
         macroScore.print();
         std::cout << "\n\n\n";
-
-        calculateAllPinsExpansionCapabilities(macro);
 
         // printMacros(macro);
     }

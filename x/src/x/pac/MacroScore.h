@@ -1,0 +1,10 @@
+#ifndef D47F145C_5AF3_4E40_8709_C11E758F35D5
+#define D47F145C_5AF3_4E40_8709_C11E758F35D5
+
+namespace Rsyn
+{
+
+} // namespace Rsyn
+
+
+#endif /* D47F145C_5AF3_4E40_8709_C11E758F35D5 */

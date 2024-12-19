@@ -7,19 +7,13 @@
 namespace Rsyn {
 
 class PinAssessmentReader : public Reader {
-    Session session;	
-    std::vector<std::string> lefFiles;
-
-    Number localWireCapacitancePerMicron;
-    Number localWireResistancePerMicron;
-    DBU maxWireSegmentInMicron;
-	
 public:
     PinAssessmentReader() = default;
-
     virtual bool load(const Rsyn::Json& params) override;
 
 private:
+    Session session;	
+    std::vector<std::string> lefFiles;	
     LefDscp lefDescriptor;
 
     void parsingFlow();
