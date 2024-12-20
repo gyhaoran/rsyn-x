@@ -14,17 +14,54 @@ namespace {
 
 // Predefined constants
 const string INVALID_LEF_NAME = "INVALID";
-const double MIN_WIDTH = 0.06; // Minimum width in micrometers
-const double MIN_SPACING = 0.06; // Minimum spacing between metals in micrometers
+const double MIN_WIDTH = 0.018; // Minimum width in micrometers
+const double MIN_SPACING = 0.018; // Minimum spacing between metals in micrometers
 const double EPSILON = 1e-9; // Small value for floating point comparison
 
+struct DesignRule {
+    double minimumClearance;
+    double viaSize;
+    // Other design rules can go here, e.g., minimum metal width, via spacing, etc.
+};
+
+// Helper function to determine if a via can fit in the given area
+bool canFitVia(const DoubleRectangle &bounds, const DesignRule &designRule) {
+    double width = bounds.computeLength(X);
+    double height = bounds.computeLength(Y);
+
+    return (width >= designRule.viaSize && height >= designRule.viaSize);
+}
+
+// Function to calculate the FitRt metric for each pin
+void calculateFitRt(LefMacroDscp &macro, const DesignRule &designRule) {
+    for (auto &pin : macro.clsPins) {
+        int validViaCount = 0;
+        int totalViaCount = 0;
+
+        // For each port of the pin, check which vias can fit
+        for (const auto &port : pin.clsPorts) {
+            for (const auto &portGeo : port.clsLefPortGeoDscp) {
+                for (const auto &bound : portGeo.clsBounds) {
+                    if (canFitVia(bound, designRule)) {
+                        validViaCount++;
+                    }
+                    totalViaCount++;
+                }
+            }
+        }
+
+        double fitRatio = (totalViaCount == 0) ? 0.0 : (validViaCount / (double) totalViaCount);
+        std::cout << "Pin: " << pin.clsPinName << " Fit Ratio: " << fitRatio << std::endl;
+    }
+}
+
 // Function to check design rules including minimum spacing from other pins
-bool checkDesignRules(const DoubleRectangle& rect, 
+bool checkDesignRules(const std::string& metaName, const DoubleRectangle& rect, 
                       const std::vector<LefObsDscp>& obstructions, 
                       const std::vector<LefPinDscp>& otherPins,
                       const DoubleRectangle& macroBound) {
     // Check minimum width
-    if (rect.computeLength(X) < MIN_WIDTH || rect.computeLength(Y) < MIN_WIDTH) {
+    if (rect.computeLength(X) < MIN_WIDTH - EPSILON || rect.computeLength(Y) < MIN_WIDTH - EPSILON) {
         // std::cout << "\033[1;31m" << "Check minimum width failed: X: " << rect.computeLength(X) << ", Y: " << rect.computeLength(Y) << ", rect: " << rect << '\n';
         return false;
     }
@@ -49,8 +86,12 @@ bool checkDesignRules(const DoubleRectangle& rect,
 
     // Check against obstructions
     for (const auto& obs : obstructions) {
+        if (obs.clsMetalLayer != metaName) {
+            continue;
+        }
         for (const auto& bound : obs.clsBounds) {
             if (!checkSpacing(bound)) {
+                // std::cout << "\033[1;31m" << "Check obstructions bound failed\n";
                 return false;
             }
         }
@@ -60,6 +101,9 @@ bool checkDesignRules(const DoubleRectangle& rect,
     for (const auto& pin : otherPins) {
         for (const auto& port : pin.clsPorts) {
             for (const auto& geo : port.clsLefPortGeoDscp) {
+                if (geo.clsMetalName != metaName) {
+                    continue;
+                }
                 for (const auto& bound : geo.clsBounds) {
                     if (rect.overlap(bound)) {
                         // std::cout << "\033[1;31m" << "expand pin port is overlap other pin port, port_expand: " << rect 
@@ -79,13 +123,8 @@ bool checkDesignRules(const DoubleRectangle& rect,
     return true;
 }
 
-// Placeholder function to retrieve obstructions from the macro.
-std::vector<LefObsDscp> getObstructionsFromMacro(const LefMacroDscp& macro) {
-    return macro.clsObs; // Return all obstructions within the macro.
-}
-
 // Function to calculate maximum expansion in one direction
-double calculateMaxExpansion(const DoubleRectangle& pinRect, 
+double calculateMaxExpansion(const std::string& metaName, const DoubleRectangle& pinRect, 
                              const std::vector<LefObsDscp>& obstructions,
                              const std::vector<LefPinDscp>& otherPins,
                              const DoubleRectangle& macroBound,
@@ -117,7 +156,7 @@ double calculateMaxExpansion(const DoubleRectangle& pinRect,
 
         maxExpansion += increment;
 
-        if (!checkDesignRules(testRect, obstructions, otherPins, macroBound)) {
+        if (!checkDesignRules(metaName, testRect, obstructions, otherPins, macroBound)) {
             break;
         }
 
@@ -138,37 +177,49 @@ struct PinExpand {
     double acsSMx{0};
     double acsEMx{0};
     double acsWMx{0};
+
+    void updateMax(const PinExpand& other) {
+        acsNMx = std::max(acsNMx, other.acsNMx);
+        acsSMx = std::max(acsSMx, other.acsSMx);
+        acsEMx = std::max(acsEMx, other.acsEMx);
+        acsWMx = std::max(acsWMx, other.acsWMx);
+    }
 };
 
 // Function to calculate expansion capabilities in four directions
 using PinMetaExpand = std::map<string, PinExpand>;
 
-PinMetaExpand calculateExpansionCapabilities(const LefPinDscp& pin, 
-                                               const std::vector<LefObsDscp>& obstructions, 
-                                               const std::vector<LefPinDscp>& otherPins,
-                                               const DoubleRectangle& macroBound) {
+PinMetaExpand calcExpansion(const LefPinDscp& pin, 
+                            const std::vector<LefObsDscp>& obstructions, 
+                            const std::vector<LefPinDscp>& otherPins,
+                            const DoubleRectangle& macroBound) {
+
     PinMetaExpand metaExpand;
-    std::map<string, int> metaCount;
 
     for (const auto& port : pin.clsPorts) {
         for (const auto& geo : port.clsLefPortGeoDscp) {
+            auto& metaName = geo.clsMetalName;
+            if (metaName.substr(0, 1) != "M") {
+                continue;
+            }
             for (const auto& rect : geo.clsBounds) {
-                double acsNMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, Y, true); // North
-                double acsSMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, Y, false); // South
-                double acsEMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, true); // East
-                double acsWMx = calculateMaxExpansion(rect, obstructions, otherPins, macroBound, X, false); // West
+
+                double acsNMx = calculateMaxExpansion(metaName, rect, obstructions, otherPins, macroBound, Y, true); // North
+                double acsSMx = calculateMaxExpansion(metaName, rect, obstructions, otherPins, macroBound, Y, false); // South
+                double acsEMx = calculateMaxExpansion(metaName, rect, obstructions, otherPins, macroBound, X, true); // East
+                double acsWMx = calculateMaxExpansion(metaName, rect, obstructions, otherPins, macroBound, X, false); // West
 
                 if (acsNMx < 0 || acsSMx < 0 || acsEMx < 0 || acsWMx < 0) {
                     std::cout << "error: acsNMx: " << acsNMx << ", acsSMx: " << acsSMx << ", acsEMx: " << acsEMx << ", acsWMx: " << acsWMx << '\n';
                 }
-                metaExpand[geo.clsMetalName].acsNMx += acsNMx;
-                metaExpand[geo.clsMetalName].acsSMx += acsSMx;
-                metaExpand[geo.clsMetalName].acsEMx += acsEMx;
-                metaExpand[geo.clsMetalName].acsWMx += acsWMx;
-                metaCount[geo.clsMetalName]++;
+
+                auto& pinExpand = metaExpand[metaName];
+                pinExpand.updateMax(PinExpand{acsNMx, acsSMx, acsEMx, acsWMx});
+
+                // std::cout << "    Layer " << metaName << ", acsNMx: " << acsNMx << ", acsSMx: " << acsSMx << ", acsEMx: " << acsEMx << ", acsWMx: " << acsWMx << '\n';
             }
         }
-    }
+    }    
 
     return metaExpand;
 }
@@ -279,7 +330,7 @@ bool isBoundPin(const LefMacroDscp& macro, const DoubleRectangle& bound)
 
 int getMetalLayerIndex(const std::string& metalName) {
     std::regex mRegex("^M(\\d+)$");
-    std::regex metaRegex("^Meta(\\d+)$"); 
+    std::regex metaRegex("^Metal(\\d+)$"); 
 
     std::smatch match;
     if (std::regex_match(metalName, match, mRegex)) {
@@ -340,21 +391,12 @@ public:
     explicit MacroScore(const LefMacroDscp& macro) : macro_{macro} {}
 
     void calc() {
-        // std::transform(macro_.clsPins.begin(), macro_.clsPins.end(), std::back_inserter(pinScores_), [this](auto& pin) {
-        //     auto score =  calcPinScore(this->macro_, pin);
-        //     maxPinLength_ = std::max(maxPinLength_, score.length());
-        //     return score;
-        // });
-
         for (size_t i = 0; i < macro_.clsPins.size(); ++i) {
             const auto& pin = macro_.clsPins[i];
             
             if (pin.clsPinName == "VDD" || pin.clsPinName == "VSS") {
                 continue;     
             }
-
-            auto score =  calcPinScore(this->macro_, pin);
-            maxPinLength_ = std::max(maxPinLength_, score.length());
 
             std::vector<LefPinDscp> otherPins;
             otherPins.reserve(macro_.clsPins.size() - 1);
@@ -365,24 +407,37 @@ public:
             }
 
             DoubleRectangle macroBound(macro_.clsOrigin, macro_.clsSize);
-            auto expand = calculateExpansionCapabilities(pin, macro_.clsObs, otherPins, macroBound);
+            auto expand = calcExpansion(pin, macro_.clsObs, otherPins, macroBound);
+            updateMaxExpand(expand);
+
+            auto score =  calcPinScore(this->macro_, pin);
+            maxPinLength_ = std::max(maxPinLength_, score.length());
             score.setExpandLen(expand);
-            calcMaxExpand(expand);
             
             pinScores_.emplace_back(score);
         }
     }
 
-    void calcMaxExpand(const PinMetaExpand& metaExpand) {
+    void updateMaxExpand(const PinMetaExpand& metaExpand) {
         for (auto it : metaExpand) {
             auto meta = it.first;
             auto expand = it.second;
-
-            maxExpand_[meta].acsEMx = std::max(maxExpand_[meta].acsEMx, expand.acsEMx);
-            maxExpand_[meta].acsNMx = std::max(maxExpand_[meta].acsNMx, expand.acsNMx);
-            maxExpand_[meta].acsSMx = std::max(maxExpand_[meta].acsSMx, expand.acsSMx);
-            maxExpand_[meta].acsWMx = std::max(maxExpand_[meta].acsWMx, expand.acsWMx);
+            maxExpand_[meta].updateMax(expand);
         }
+    }
+
+    void printExpandHead() {
+        for (auto it : maxExpand_) {
+            auto meta = it.first;
+            auto layer = std::to_string(getMetalLayerIndex(meta));
+            std::cout << "     AcsNM" << layer << "      AcsSM" << layer << "      AcsEM" << layer << "      AcsWM" << layer << " ";
+        }
+    }
+
+    void printHead() {
+        std::cout << "  PinName     Ovlp    PinLen    PlScore     Score       BdPin";
+        printExpandHead();
+        std::cout << '\n';
     }
 
     void print()
@@ -392,13 +447,15 @@ public:
             return;
         }
         
-        std::cout << "  PinName     Ovlp    PinLen    PlScore     Score       BdPin     AcsNMx      AcsSMx      AcsEMx      AcsWMx\n";
+        printHead();
+
         for (auto& pin : pinScores_)
         {
             auto overlap = pin.isConnected() ? "YES" : "NO";
             std::string bound = pin.isBdPin() ? "YES" : "NO";
 
-            std::cout << "  " << padString(pin.name()) << padString(overlap, 8)
+            std::cout << "  " << padString(pin.name());
+            std::cout << padString(overlap, 8)
                       << padString(std::to_string(pin.length()), 10)
                       << padString(std::to_string(pin.pinLenScore(maxPinLength_)))
                       << padString(std::to_string(pin.score(maxPinLength_, maxExpand_)))
@@ -406,14 +463,6 @@ public:
             pin.printExpand(maxExpand_);
             std::cout << '\n';
         }
-
-        // std::cout << "  PinName     AcsNMx      AcsSMx      AcsEMx      AcsWMx\n";
-        // for (auto& pin : pinScores_)
-        // {
-        //     std::cout << "  " << padString(pin.name());
-        //     pin.printExpand(maxExpand_);
-        //     std::cout << '\n';
-        // }
     }
 
 private:
@@ -449,19 +498,29 @@ void pinAccessCheck(const LefDscp& lef) {
     MEASURE_TIME();
     for (auto& macro : lef.clsLefMacroDscps)
     {
-        std::cout << "\n\n\n";
+        std::cout << "\n";
         std::cout << "Macro " << macro.clsMacroName << ": pin num: " << macro.clsPins.size() << ", clsSize" << macro.clsSize << '\n';
         MacroScore macroScore(macro);
 
         macroScore.calc();
         macroScore.print();
-        std::cout << "\n\n\n";
+        std::cout << "\n";
 
         // printMacros(macro);
     }
+
+    std::cout << "lef.clsLefLayerDscps.size: " << lef.clsLefLayerDscps.size() << '\n';
+    
     for (auto& layer : lef.clsLefLayerDscps)
     {
+        printf("Name: %s, Width: %lf", layer.clsName.c_str(), layer.clsWidth);
+        for (auto& space : layer.clsSpacingRules) 
+        {
+            printf(", Spacing: %lf", space.clsSpacing);
+        }
 
+        // std::copy(begin(via.clsVias), end(via.clsVias), std::ostream_iterator<std::string>(std::cout, ", "));
+        std::cout << '\n';
     }
 }
 
@@ -469,6 +528,7 @@ void pinAccessCheck(const LefDscp& lef) {
 
 bool PinAssessmentReader::load(const Rsyn::Json& params) {
 	std::string path = params.value("path", "");
+    std::cout << params << "\n";
 
     if (path.back() != '/') {
         path += "/";
