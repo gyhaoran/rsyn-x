@@ -31,11 +31,11 @@
 #include <QPrintDialog>
 #include <QEvent>
 
-#ifndef QT_NO_OPENGL
-#include <QtOpenGL>
-#else
+// #ifndef QT_NO_OPENGL
+// #include <QtOpenGL>
+// #else
 #include <QtWidgets>
-#endif
+// #endif
 
 #include <iostream>
 
@@ -168,10 +168,10 @@ GraphicsView::togglePointerMode(const bool enable) {
 
 void
 GraphicsView::toggleOpenGL(const bool enable) {
-#ifndef QT_NO_OPENGL
-    setViewport(enable ?
-		new QGLWidget(QGLFormat(QGL::SampleBuffers)) : new QWidget);
-#endif
+// #ifndef QT_NO_OPENGL
+//     setViewport(enable ?
+// 		new QGLWidget(QGLFormat(QGL::SampleBuffers)) : new QWidget);
+// #endif
 } // end method
 
 // -----------------------------------------------------------------------------

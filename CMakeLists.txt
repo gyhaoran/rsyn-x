@@ -38,6 +38,9 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/x/cmake)
 
+set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/release")
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
 set_property(SOURCE file.hh PROPERTY SKIP_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 14)
 
@@ -74,7 +77,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fopenmp")
 
 find_package(Qt5Widgets REQUIRED)
 find_package(Qt5PrintSupport REQUIRED)
-find_package(Qt5OpenGL REQUIRED)
+# find_package(Qt5OpenGL REQUIRED)
 
 #find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
 
@@ -210,7 +213,7 @@ endif()
 # Qt5 Widgets for linking
 target_link_libraries(rsyn Qt5::Widgets)
 target_link_libraries(rsyn Qt5::PrintSupport)
-target_link_libraries(rsyn Qt5::OpenGL)
+# target_link_libraries(rsyn Qt5::OpenGL)
 
 ############
 # Options  #
@@ -219,3 +222,16 @@ if(ISPD18)
   message("ISPD18 mode is on.")
   target_compile_options(rsyn PUBLIC "-DISPD18_BIN")
 endif()
+
+# Install rules       
+install(TARGETS rsyn
+    DESTINATION rsyn/bin
+)
+
+install(FILES x/demo/simple/pac.lef x/demo/simple/pin-assess.rsyn x/demo/simple/asap7sc7p5t_28_R_1x_220121a.lef
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/rsyn/data
+)
+
+set_target_properties(rsyn PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib;$ORIGIN/../lib64"
+)

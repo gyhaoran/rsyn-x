@@ -550,7 +550,7 @@ bool PinAssessmentReader::load(const Rsyn::Json& params) {
     std::cout << params << "\n";
 
 	std::string path = params.value("path", "");
-    socre_file_ = params.value("socre_file", "pac.json");
+    score_file_ = params.value("score_file", "pac.json");
     MIN_WIDTH = params.value("min_width", 0.01);
     MIN_SPACING = params.value("min_space", 0.01);
 
@@ -584,7 +584,7 @@ void PinAssessmentReader::parsingFlow() {
 	parseLEFFiles();
     // populateDesign();
 
-    pinAccessCheck(lefDescriptor, socre_file_);
+    pinAccessCheck(lefDescriptor, score_file_);
 
     // Stepwatch watch("Run pac process");
     // session.runProcess("pin.accesscheck");
