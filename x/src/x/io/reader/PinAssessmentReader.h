@@ -15,6 +15,7 @@ private:
     Session session;	
     std::vector<std::string> lefFiles;	
     LefDscp lefDescriptor;
+    std::string socre_file_{""};
 
     void parsingFlow();
     void populateDesign();

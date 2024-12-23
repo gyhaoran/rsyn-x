@@ -7,6 +7,7 @@
 #include "rsyn/util/ScopeTimer.h"
 #include "rsyn/model/timing/Timer.h"
 #include <numeric>
+#include <fstream>
 
 namespace Rsyn {
 
@@ -14,8 +15,8 @@ namespace {
 
 // Predefined constants
 const string INVALID_LEF_NAME = "INVALID";
-const double MIN_WIDTH = 0.018; // Minimum width in micrometers
-const double MIN_SPACING = 0.018; // Minimum spacing between metals in micrometers
+double MIN_WIDTH = 0.018; // Minimum width in micrometers
+double MIN_SPACING = 0.018; // Minimum spacing between metals in micrometers
 const double EPSILON = 1e-9; // Small value for floating point comparison
 
 struct DesignRule {
@@ -246,25 +247,25 @@ public:
 
     double ovlpScore() const {
         double baseScore = 40;
-        return connectToUpperLayer_ ? baseScore : 0;
+        return connectToUpperLayer_ ? 0 : baseScore;
     }
 
     double bdPinScore() const {
         double baseScore = 20;
-        return isBound_ ? baseScore : 0;
+        return isBound_ ? 0 : baseScore;
     }
 
-    double dirScore(double value, double maxVal) const {
-        double baseScore = 5;
+    double dirScore(double value, double maxVal, int cnt=1) const {
+        double baseScore = 5.0;
         if (maxVal == 0) {
-            return baseScore; // Avoid division by zero
+            return baseScore / cnt; // Avoid division by zero
         }
-        return baseScore * (maxVal - value) / maxVal;
+        return (baseScore * value) / (maxVal * cnt);
     }
 
-    double expandSocre(const PinExpand& expand, const PinExpand& maxExpand) const {
-        return dirScore(expand.acsEMx, maxExpand.acsEMx) + dirScore(expand.acsNMx, maxExpand.acsNMx)
-             + dirScore(expand.acsSMx, maxExpand.acsSMx) + dirScore(expand.acsWMx, maxExpand.acsWMx);
+    double expandSocre(const PinExpand& expand, const PinExpand& maxExpand, int cnt) const {
+        return dirScore(expand.acsEMx, maxExpand.acsEMx, cnt) + dirScore(expand.acsNMx, maxExpand.acsNMx, cnt)
+             + dirScore(expand.acsSMx, maxExpand.acsSMx, cnt) + dirScore(expand.acsWMx, maxExpand.acsWMx, cnt);
     }
 
     double expandSocre(PinMetaExpand& maxExpand) const {
@@ -272,7 +273,7 @@ public:
         for (auto it : expand_) {
             string meta = it.first;
             PinExpand expand = it.second;
-            score += expandSocre(expand, maxExpand[meta]);
+            score += expandSocre(expand, maxExpand[meta], maxExpand.size());
         }
         return score;
     }
@@ -402,7 +403,7 @@ public:
             otherPins.reserve(macro_.clsPins.size() - 1);
             for (size_t j = 0; j < macro_.clsPins.size(); ++j) {
                 if (i != j) {
-                    otherPins.push_back(macro_.clsPins[j]);
+                    otherPins.emplace_back(macro_.clsPins[j]);
                 }
             }
 
@@ -435,6 +436,7 @@ public:
     }
 
     void printHead() {
+        std::cout << "Macro " << macro_.clsMacroName << ": pin num: " << macro_.clsPins.size() << ", clsSize" << macro_.clsSize << '\n';
         std::cout << "  PinName     Ovlp    PinLen    PlScore     Score       BdPin";
         printExpandHead();
         std::cout << '\n';
@@ -463,6 +465,25 @@ public:
             pin.printExpand(maxExpand_);
             std::cout << '\n';
         }
+    }
+
+    std::string toString() {
+        std::stringstream ss;
+        ss << "  {\"" << macro_.clsMacroName << "\": [";
+
+        int end = pinScores_.size() - 1;
+        for (int i = 0; i < end; ++i) {
+            auto& pin = pinScores_[i];
+            ss << "{\"" << pin.name() << "\": " << pin.score(maxPinLength_, maxExpand_) << "}, ";
+        }
+        if (end >= 0) {
+            auto& pin = pinScores_[end];
+            ss << "{\"" << pin.name() << "\": " << pin.score(maxPinLength_, maxExpand_) << "}";
+        }
+
+        ss << "]}";
+
+        return ss.str();
     }
 
 private:
@@ -494,41 +515,44 @@ void printMacros(const LefMacroDscp& macro)
     }
 }
 
-void pinAccessCheck(const LefDscp& lef) {
+void pinAccessCheck(const LefDscp& lef, const std::string& socre_file) {
     MEASURE_TIME();
+    std::string res = "[\n";
     for (auto& macro : lef.clsLefMacroDscps)
     {
-        std::cout << "\n";
-        std::cout << "Macro " << macro.clsMacroName << ": pin num: " << macro.clsPins.size() << ", clsSize" << macro.clsSize << '\n';
         MacroScore macroScore(macro);
-
         macroScore.calc();
-        macroScore.print();
-        std::cout << "\n";
+        res += macroScore.toString() + ", \n";
 
+        // macroScore.print();
         // printMacros(macro);
     }
-
-    std::cout << "lef.clsLefLayerDscps.size: " << lef.clsLefLayerDscps.size() << '\n';
-    
-    for (auto& layer : lef.clsLefLayerDscps)
+    if (!lef.clsLefMacroDscps.empty())
     {
-        printf("Name: %s, Width: %lf", layer.clsName.c_str(), layer.clsWidth);
-        for (auto& space : layer.clsSpacingRules) 
-        {
-            printf(", Spacing: %lf", space.clsSpacing);
-        }
-
-        // std::copy(begin(via.clsVias), end(via.clsVias), std::ostream_iterator<std::string>(std::cout, ", "));
-        std::cout << '\n';
+        res = res.substr(0, res.size() - 3);
     }
+
+    res += "\n]\n";
+    std::cout << res;
+
+    std::ofstream outFile(socre_file);
+    if (!outFile) {
+        std::cerr << "Error opening file for writing!" << std::endl;
+        return;
+    }
+    outFile << res;
+    outFile.close();
 }
 
 } // namespace
 
 bool PinAssessmentReader::load(const Rsyn::Json& params) {
-	std::string path = params.value("path", "");
     std::cout << params << "\n";
+
+	std::string path = params.value("path", "");
+    socre_file_ = params.value("socre_file", "pac.json");
+    MIN_WIDTH = params.value("min_width", 0.01);
+    MIN_SPACING = params.value("min_space", 0.01);
 
     if (path.back() != '/') {
         path += "/";
@@ -560,7 +584,7 @@ void PinAssessmentReader::parsingFlow() {
 	parseLEFFiles();
     // populateDesign();
 
-    pinAccessCheck(lefDescriptor);
+    pinAccessCheck(lefDescriptor, socre_file_);
 
     // Stepwatch watch("Run pac process");
     // session.runProcess("pin.accesscheck");
