@@ -228,7 +228,7 @@ install(TARGETS rsyn
     DESTINATION rsyn/bin
 )
 
-install(FILES x/demo/simple/pac.lef x/demo/simple/pin-assess.rsyn x/demo/simple/asap7sc7p5t_28_R_1x_220121a.lef
+install(FILES x/demo/simple/pin-assess.rsyn x/demo/simple/macro-cost.rsyn x/demo/simple/pac.lef x/demo/simple/asap7sc7p5t_28_R_1x_220121a.lef
     DESTINATION ${CMAKE_INSTALL_PREFIX}/rsyn/data
 )
 

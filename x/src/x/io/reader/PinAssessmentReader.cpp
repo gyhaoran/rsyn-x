@@ -1,15 +1,12 @@
 #include "PinAssessmentReader.h"
-#include "rsyn/core/Rsyn.h"
 #include "rsyn/io/parser/lef_def/LEFControlParser.h"
-#include "rsyn/io/Graphics.h"
-#include <Rsyn/PhysicalDesign>
 #include "rsyn/util/Stepwatch.h"
 #include "rsyn/util/ScopeTimer.h"
-#include "rsyn/model/timing/Timer.h"
 #include "x/pac/PinExpand.h"
 #include "x/pac/MacroScore.h"
 #include "x/pac/PinScore.h"
 
+#include <boost/filesystem.hpp>
 #include <numeric>
 #include <fstream>
 
@@ -68,43 +65,6 @@ void pinAccessCheck(const LefDscp& lef, const std::string& socre_file) {
     outFile.close();
 }
 
-
-double calculateSmallestBoundingBoxArea(const LefPinDscp& pin1, const LefPinDscp& pin2) {
-    // Initialize a degenerate bounding box
-    DoubleRectangle bbox;
-    bbox.degenerate();
-
-    // Helper function to stretch the bounding box to fit a rectangle
-    auto stretchToFit = [&bbox](const DoubleRectangle& rect) {
-        bbox.stretchToFit(rect[0]);
-        bbox.stretchToFit(rect[1]);
-    };
-
-    // Iterate over all geometries of both pins and update the bounding box
-    for (const auto& port : pin1.clsPorts) {
-        for (const auto& geo : port.clsLefPortGeoDscp) {
-            for (const auto& rect : geo.clsBounds) {
-                stretchToFit(rect);
-            }
-        }
-    }
-
-    for (const auto& port : pin2.clsPorts) {
-        for (const auto& geo : port.clsLefPortGeoDscp) {
-            for (const auto& rect : geo.clsBounds) {
-                stretchToFit(rect);
-            }
-        }
-    }
-
-    // Calculate the width and height of the bounding box
-    double width = bbox.computeLength(0); // Dimension 0 is X
-    double height = bbox.computeLength(1); // Dimension 1 is Y
-
-    // Return the area of the bounding box
-    return width * height;
-}
-
 } // namespace
 
 bool PinAssessmentReader::load(const Rsyn::Json& params) {
@@ -134,8 +94,6 @@ bool PinAssessmentReader::load(const Rsyn::Json& params) {
     } else {
         lefFiles.push_back(path + params.value("lefFiles", ""));
     }
-
-	this->session = session;
 
 	parsingFlow();
 	return true;

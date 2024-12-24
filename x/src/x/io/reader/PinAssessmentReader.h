@@ -1,8 +1,10 @@
 #ifndef D3C9AC1E_0A01_4D47_8ECE_312D25CB5419
 #define D3C9AC1E_0A01_4D47_8ECE_312D25CB5419
 
-#include <Rsyn/Session>
+#include "rsyn/phy/util/LefDescriptors.h"
 #include "rsyn/model/timing/types.h"
+#include "rsyn/util/Json.h"
+#include "rsyn/session/Reader.h"
 
 namespace Rsyn {
 
@@ -12,7 +14,6 @@ public:
     virtual bool load(const Rsyn::Json& params) override;
 
 private:
-    Session session;	
     std::vector<std::string> lefFiles;	
     LefDscp lefDescriptor;
     std::string scoreFile_{""};

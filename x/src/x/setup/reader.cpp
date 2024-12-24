@@ -24,6 +24,7 @@
 // Readers
 #include "x/io/reader/ICCAD15ReaderExtended.h"
 #include "x/io/reader/PinAssessmentReader.h"
+#include "x/io/reader/MacroCostReader.h"
 
 // Registration
 namespace Rsyn {
@@ -31,5 +32,6 @@ static Startup registerReaders([]{
 	Rsyn::Session session;
 	session.registerReader<ICCAD15::ICCAD15ReaderExtended>("iccad2015");
 	session.registerReader<Rsyn::PinAssessmentReader>("pin.assessment");
+	session.registerReader<Rsyn::MacroCostReader>("pin.cost");
 });
 } // end namespace
