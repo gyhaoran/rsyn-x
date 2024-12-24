@@ -15,11 +15,10 @@ private:
     Session session;	
     std::vector<std::string> lefFiles;	
     LefDscp lefDescriptor;
-    std::string score_file_{""};
+    std::string scoreFile_{""};
 
     void parsingFlow();
-    void populateDesign();
-    void parseLEFFiles();
+    void parseLefFiles();
 }; // end class
 
 } // namespace Rsyn
