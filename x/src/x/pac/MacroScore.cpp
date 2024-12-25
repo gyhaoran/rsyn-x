@@ -247,7 +247,7 @@ PinScore calcPinScore(const LefMacroDscp& macro, const LefPinDscp& pin) {
 
 } // namespace
 
-MacroScore::MacroScore(const LefMacroDscp& macro) : macro_{macro} {}
+MacroScore::MacroScore(const LefMacroDscp& macro, bool needExpand) : macro_{macro}, needExpand_{needExpand} {}
 
 void MacroScore::calc() {
     for (size_t i = 0; i < macro_.clsPins.size(); ++i) {
@@ -259,20 +259,19 @@ void MacroScore::calc() {
 
         std::vector<LefPinDscp> otherPins;
         otherPins.reserve(macro_.clsPins.size() - 1);
-        for (size_t j = 0; j < macro_.clsPins.size(); ++j) {
-            if (i != j) {
-                otherPins.emplace_back(macro_.clsPins[j]);
-            }
-        }
-
-        DoubleRectangle macroBound(macro_.clsOrigin, macro_.clsSize);
-        auto expand = calcExpansion(pin, macro_.clsObs, otherPins, macroBound);
-        updateMaxExpand(expand);
+        std::copy_if(macro_.clsPins.begin(), macro_.clsPins.end(), std::back_inserter(otherPins), 
+                    [i, this](const LefPinDscp& otherPin) { return &otherPin != &macro_.clsPins[i]; });
 
         auto score =  calcPinScore(this->macro_, pin);
         maxPinLength_ = std::max(maxPinLength_, score.length());
-        score.setExpandLen(expand);
         
+        if (needExpand_) {
+            DoubleRectangle macroBound(macro_.clsOrigin, macro_.clsSize);
+            auto expand = calcExpansion(pin, macro_.clsObs, otherPins, macroBound);
+            updateMaxExpand(expand);
+            score.setExpandLen(expand);
+        }
+
         pinScores_.emplace_back(score);
     }
 }

@@ -24,16 +24,13 @@ void calcMacroCost(const LefDscp& lef, double minWidth, const std::string& costF
         ss << "  {\"" << macro.clsMacroName << "\": " << cost << "}\n";
     }
     ss << "]\n";
-
-    auto res = ss.str();
-    std::cout << res;
-
+    
     std::ofstream outFile(costFile);
     if (!outFile) {
         std::cerr << "Error opening file for writing!" << std::endl;
         return;
     }
-    outFile << res;
+    outFile << ss.str();
     outFile.close();
 }
 
@@ -41,8 +38,6 @@ void calcMacroCost(const LefDscp& lef, double minWidth, const std::string& costF
 
 
 bool MacroCostReader::load(const Rsyn::Json& params) {
-    std::cout << params << "\n";
-
 	std::string path = params.value("path", "");
     costFile_ = params.value("cost_file", "macro_cost.json");
     minWidth_ = params.value<double>("min_width", 0.01);
@@ -75,7 +70,6 @@ void MacroCostReader::parsingFlow() {
 }
 
 void MacroCostReader::parseLefFiles() {
-	Stepwatch watch("Parsing LEF files");
 	LEFControlParser lefParser;
 
 	for (int i = 0; i < lefFiles_.size(); i++) {

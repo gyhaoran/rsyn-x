@@ -36,16 +36,14 @@ void printMacros(const LefMacroDscp& macro)
     }
 }
 
-void pinAccessCheck(const LefDscp& lef, const std::string& socre_file) {
-    MEASURE_TIME();
+void pinAccessCheck(const LefDscp& lef, const std::string& socre_file, bool needExpand) {
     std::string res = "[\n";
     for (auto& macro : lef.clsLefMacroDscps)
     {
-        MacroScore macroScore(macro);
+        MacroScore macroScore(macro, needExpand);
         macroScore.calc();
         res += macroScore.toString() + ", \n";
 
-        macroScore.print();
         // printMacros(macro);
     }
     if (!lef.clsLefMacroDscps.empty())
@@ -54,7 +52,6 @@ void pinAccessCheck(const LefDscp& lef, const std::string& socre_file) {
     }
 
     res += "\n]\n";
-    std::cout << res;
 
     std::ofstream outFile(socre_file);
     if (!outFile) {
@@ -68,10 +65,10 @@ void pinAccessCheck(const LefDscp& lef, const std::string& socre_file) {
 } // namespace
 
 bool PinAssessmentReader::load(const Rsyn::Json& params) {
-    std::cout << params << "\n";
-
+    std::cout << params << '\n';
 	std::string path = params.value("path", "");
     scoreFile_ = params.value("score_file", "pac.json");
+    needExpand_ = params.value<bool>("expand", true);
     
     double minWidth = params.value<double>("min_width", 0.01);
     double minSpace = params.value<double>("min_space", 0.01);
@@ -101,11 +98,10 @@ bool PinAssessmentReader::load(const Rsyn::Json& params) {
 
 void PinAssessmentReader::parsingFlow() {
 	parseLefFiles();
-    pinAccessCheck(lefDescriptor, scoreFile_);
+    pinAccessCheck(lefDescriptor, scoreFile_, needExpand_);
 }
 
 void PinAssessmentReader::parseLefFiles() {
-	Stepwatch watch("Parsing LEF files");
 	LEFControlParser lefParser;
 
 	for (int i = 0; i < lefFiles.size(); i++) {

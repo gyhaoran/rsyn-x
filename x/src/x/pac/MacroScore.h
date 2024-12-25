@@ -12,7 +12,7 @@ namespace Rsyn
 
 class MacroScore {
 public:
-    explicit MacroScore(const LefMacroDscp& macro);
+    explicit MacroScore(const LefMacroDscp& macro, bool needExpand=true);
 
     void calc();
     void updateMaxExpand(const PinMetaExpand& metaExpand);
@@ -25,6 +25,7 @@ public:
 private:
     const LefMacroDscp& macro_;
     double maxPinLength_{0};
+    bool needExpand_{true};
     PinMetaExpand maxExpand_{};
     std::vector<PinScore> pinScores_{};
 };

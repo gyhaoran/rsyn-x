@@ -14,12 +14,14 @@ public:
     virtual bool load(const Rsyn::Json& params) override;
 
 private:
+    void parsingFlow();
+    void parseLefFiles();
+    
+private:
     std::vector<std::string> lefFiles;	
     LefDscp lefDescriptor;
     std::string scoreFile_{""};
-
-    void parsingFlow();
-    void parseLefFiles();
+    bool needExpand_{true};
 }; // end class
 
 } // namespace Rsyn

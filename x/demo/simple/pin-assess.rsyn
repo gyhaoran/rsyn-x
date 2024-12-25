@@ -2,5 +2,6 @@ open "pin.assessment" {
 	"lefFiles" : "pac.lef",
 	"min_width": 0.06,
 	"min_space": 0.06,
-	"score_file": "pac.json"
+	"score_file": "pac.json",
+    "expand" : true
 };
