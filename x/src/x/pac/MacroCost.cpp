@@ -44,14 +44,7 @@ double calcSmallestBoundingBoxArea(const LefPinDscp& pin1, const LefPinDscp& pin
         }
     }
 
-    // Calculate the width and height of the bounding box
-    double width = bbox.computeLength(X);
-    double height = bbox.computeLength(Y);
-
-    std::cout << "Pin " << pin1.clsPinName << " and Pin " << pin2.clsPinName << " bbox is: " << bbox << '\n';
-
-    // Return the area of the bounding box
-    return width * height;
+    return bbox.computeArea();
 }
 
 double calcPinArea(const LefPinDscp& pin, int layer=0) {

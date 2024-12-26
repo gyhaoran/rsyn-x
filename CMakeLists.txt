@@ -42,18 +42,38 @@ set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/release")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 
 set_property(SOURCE file.hh PROPERTY SKIP_AUTOMOC ON)
+
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS False)
+message(STATUS "CXX Standard: ${CMAKE_CXX_STANDARD}")
 
 set(PATH_RSYN ${CMAKE_CURRENT_SOURCE_DIR}/rsyn)
 set(PATH_X ${CMAKE_CURRENT_SOURCE_DIR}/x)
 
 set(PATH_QT ${CMAKE_CURRENT_SOURCE_DIR}/rsyn/src/rsyn/qt)
 
+if(NOT DEFINED PKGS_PATH)
+    set(PKGS_PATH /home/usergrp/data/pkgs)
+endif()
+
+message(STATUS "PKGS_PATH: ${PKGS_PATH}")
+
+set(BOOST_PATH ${PKGS_PATH}/boost)
+set(QT5_PATH ${PKGS_PATH}/qt/qt5)
+set(LIBPNG_PATH ${PKGS_PATH}/libpng)
+
+list(APPEND CMAKE_PREFIX_PATH ${BOOST_PATH})
+list(APPEND CMAKE_PREFIX_PATH ${QT5_PATH})
+list(APPEND CMAKE_PREFIX_PATH ${LIBPNG_PATH})
+
+message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+
 ###################
 # Warnings/Errors #
 ###################
 
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Werror=return-type")
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Werror=return-type -Wno-deprecated-declarations -Wno-register -Wno-unused-result")
 
 ######################
 # Check Dependencies #
